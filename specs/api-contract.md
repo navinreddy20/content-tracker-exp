@@ -162,6 +162,94 @@ remains on the board (no local removal on failure).
 
 ---
 
+## POST /api/auth/login
+
+**Request body**:
+
+```json
+{
+  "username": "string   (required, non-empty)",
+  "password": "string   (required, non-empty)"
+}
+```
+
+**Success (`res.ok === true`)** — `res.data` is a JWT token and the authenticated user's role:
+
+```json
+{
+  "access_token": "string   (JWT)",
+  "token_type":   "bearer",
+  "role":         "Admin | Content | Editor | Uploader"
+}
+```
+
+The frontend stores `access_token` in `localStorage` and attaches it as an
+`Authorization: Bearer <token>` header on all subsequent requests.
+
+**Error handling**: `401 Unauthorized` — credentials are invalid. The user
+remains on the login screen and an error message is shown. No token is stored.
+
+---
+
+## POST /api/auth/users _(Admin only)_
+
+**Request**: requires `Authorization: Bearer <access_token>` header.
+
+**Request body**:
+
+```json
+{
+  "username": "string   (required, non-empty, must be unique)",
+  "password": "string   (required, non-empty)",
+  "role":     "Admin | Content | Editor | Uploader"
+}
+```
+
+**Success (`res.ok === true`)** — `res.data` is the newly created user
+(password is never echoed):
+
+```json
+{
+  "id":       "integer",
+  "username": "string",
+  "role":     "Admin | Content | Editor | Uploader"
+}
+```
+
+**Error handling**:
+- `401 Unauthorized` — no valid token supplied.
+- `403 Forbidden` — authenticated user is not an Admin.
+- `409 Conflict` — `username` already exists; response body should include
+  `{ "detail": "Username already taken" }`.
+
+---
+
+## GET /api/auth/me
+
+**Request**: requires `Authorization: Bearer <access_token>` header. No body,
+no query params.
+
+**Success (`res.ok === true`)** — `res.data` is the profile of the currently
+authenticated user:
+
+```json
+{
+  "id":       "integer",
+  "username": "string",
+  "role":     "Admin | Content | Editor | Uploader"
+}
+```
+
+The frontend uses this response to initialise the active role and render the
+correct permission set after a page reload, without requiring the user to log
+in again.
+
+**Error handling**: `401 Unauthorized` — token is missing, expired, or
+invalid. The frontend clears the stored token from `localStorage` and
+redirects the user to the login screen.
+
+---
+
 ## Error-handling contract summary
 
 | Endpoint            | `ok===false` check         | Caught inside `api.*`? | On error                                                            |
@@ -170,6 +258,9 @@ remains on the board (no local removal on failure).
 | `POST /api/tasks`   | `throw Error("Server error ${status}")` | No — propagates       | `Save failed: …` toast in `handleFormSubmit`                        |
 | `PUT /api/tasks/{id}` | `throw Error("Server error ${status}")` | No — propagates     | Caller-specific toast (`Could not move/advance task`, `Save failed`) |
 | `DELETE /api/tasks/{id}` | `throw Error("Server error ${status}")` | No — propagates | `Could not delete task: …` toast                                    |
+| `POST /api/auth/login` | `throw Error("Server error ${status}")` | No — propagates | Error message shown on login screen; no token stored                |
+| `POST /api/auth/users` | `throw Error("Server error ${status}")` | No — propagates | `401` / `403` / `409` surfaced as `Server error ${status}`          |
+| `GET /api/auth/me` | `throw Error("Server error ${status}")` | No — propagates     | Token cleared from `localStorage`; redirect to login screen         |
 
 The frontend distinguishes only "ok vs not ok" — no per-status-code branching.
 Any non-2xx is surfaced verbatim as `Server error ${status}`. Return standard
